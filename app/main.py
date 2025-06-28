@@ -42,12 +42,11 @@ def verify_api_key(x_api_key: str = Header(...)):
     dependencies=[Depends(verify_api_key)]
 )
 def create_vehicle(
-    info: schemas.VehicleInfoCreate,
-    db: Session = Depends(get_db)
+        info: schemas.VehicleInfoCreate,
+        db: Session = Depends(get_db)
 ):
     """
-    将前端传来的 VehicleInfoCreate 数据保存到数据库，
-    返回保存后的完整 VehicleInfoOut 对象（包含 id 字段）。
+    将前端传来的 VehicleInfoCreate 数据保存到数据库，返回保存后的完整 VehicleInfoOut 对象（包含 id 字段）。
     """
     return crud.create_vehicle_info(db, info)
 
@@ -55,21 +54,21 @@ def create_vehicle(
 # GET 路由：按条件查询车辆信息
 @app.get(
     "/vehicle/info",
-    response_model=List[schemas.VehicleInfoOut],
+    response_model=schemas.VehicleInfoList,
     dependencies=[Depends(verify_api_key)]
 )
 def get_vehicle(
-    original_location: str,
-    color: str,
-    license: str = None,
-    Brand: str = None,
-    attachment: str = None,
-    other_feature: str = None,
-    db: Session = Depends(get_db)
+        original_location: str,
+        color: str,
+        license: str = None,
+        Brand: str = None,
+        attachment: str = None,
+        other_feature: str = None,
+        db: Session = Depends(get_db)
 ):
     """
     必填 original_location、color，可选 license、Brand、attachment、other_feature。
-    返回所有匹配的 VehicleInfo 记录列表。
+    返回所有匹配的 VehicleInfo 记录列表，包装在 items 字段中。
     """
     res = crud.query_vehicle_info(
         db,
@@ -82,4 +81,6 @@ def get_vehicle(
     )
     if not res:
         raise HTTPException(status_code=404, detail="No records found")
-    return res
+
+    # 返回包装在 'items' 字段中的列表
+    return schemas.VehicleInfoList(items=res)

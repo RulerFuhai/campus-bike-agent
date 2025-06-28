@@ -1,5 +1,6 @@
 # app/schemas.py
 from pydantic import BaseModel
+from typing import List
 
 class VehicleInfoBase(BaseModel):
     license: str
@@ -18,3 +19,6 @@ class VehicleInfoOut(VehicleInfoBase):
 
     class Config:
         orm_mode = True
+
+class VehicleInfoList(BaseModel):
+    items: List[VehicleInfoOut]
