@@ -18,7 +18,8 @@ class VehicleInfoOut(VehicleInfoBase):
     id: int
 
     class Config:
-        orm_mode = True
+        # Pydantic V2 ORM 模式配置
+        from_attributes = True
 
 class VehicleInfoList(BaseModel):
     items: List[VehicleInfoOut]
