@@ -1,4 +1,5 @@
 # app/main.py
+
 import os
 from typing import List
 
@@ -7,8 +8,9 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 
-import crud, models, schemas
-from database import SessionLocal, engine
+# —— 关键：用包路径导入 ——
+from app import crud, models, schemas
+from app.database import SessionLocal, engine
 
 # ——— 环境 & 数据库 初始化 ———
 load_dotenv()
@@ -29,14 +31,19 @@ def get_db():
         db.close()
 
 # —— 依赖：插件 API Key 验证 ——
-def verify_api_key(x_api_key: str = Header(..., alias="X-API-Key")):
+def verify_api_key(
+    x_api_key: str = Header(..., alias="X-API-Key")
+):
     if x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Invalid API Key")
 
 # —— 依赖：超级管理员密码验证 ——
-def verify_admin_password(x_admin_password: str = Header(..., alias="X-Admin-Password")):
+def verify_admin_password(
+    x_admin_password: str = Header(..., alias="X-Admin-Password")
+):
     if x_admin_password != ADMIN_PASSWORD:
         raise HTTPException(status_code=401, detail="Invalid admin password")
+
 
 # — POST /vehicle/info — 登记车辆 ——
 @app.post(
@@ -67,7 +74,6 @@ def create_vehicle(
     if dup:
         return JSONResponse(status_code=200, content={"message": "您输入的数据已经登记"})
 
-    # —— 写库并返回 ——
     try:
         new_obj = crud.create_vehicle_info(db, info)
         return new_obj

@@ -1,7 +1,8 @@
 # app/crud.py
 from sqlalchemy.orm import Session
-from models import VehicleInfo
-from schemas import VehicleInfoCreate
+# —— 关键：从包里导入 ——
+from app.models import VehicleInfo
+from app.schemas import VehicleInfoCreate
 
 def create_vehicle_info(db: Session, info: VehicleInfoCreate):
     db_obj = VehicleInfo(
