@@ -7,20 +7,20 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
 
-from . import crud, models, schemas
-from .database import SessionLocal, engine
+import crud, models, schemas
+from database import SessionLocal, engine
 
-# 加载环境变量
+# ——— 环境 & 数据库 初始化 ———
 load_dotenv()
 API_KEY = os.getenv("PLUGIN_API_KEY")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
 
-# 创建所有表
+# 自动创建表
 models.Base.metadata.create_all(bind=engine)
 
-# 实例化 FastAPI
 app = FastAPI(title="Vehicle Info Plugin")
 
-# 依赖：获取数据库会话
+# —— 依赖：数据库会话 ——
 def get_db():
     db = SessionLocal()
     try:
@@ -28,12 +28,17 @@ def get_db():
     finally:
         db.close()
 
-# 依赖：简单的 API Key 验证
-def verify_api_key(x_api_key: str = Header(...)):
+# —— 依赖：插件 API Key 验证 ——
+def verify_api_key(x_api_key: str = Header(..., alias="X-API-Key")):
     if x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Invalid API Key")
 
-# POST 路由：登记车辆信息
+# —— 依赖：超级管理员密码验证 ——
+def verify_admin_password(x_admin_password: str = Header(..., alias="X-Admin-Password")):
+    if x_admin_password != ADMIN_PASSWORD:
+        raise HTTPException(status_code=401, detail="Invalid admin password")
+
+# — POST /vehicle/info — 登记车辆 ——
 @app.post(
     "/vehicle/info",
     response_model=schemas.VehicleInfoOut,
@@ -43,15 +48,11 @@ def create_vehicle(
     info: schemas.VehicleInfoCreate,
     db: Session = Depends(get_db)
 ):
-    """
-    将前端传来的 VehicleInfoCreate 数据保存到数据库，
-    若重复则给出友好提示。
-    """
-    # —— 1. 重复检测 ——
+    # —— 重复检测 ——
     if info.license != "无":
-        dup = db.query(models.VehicleInfo)\
-                .filter(models.VehicleInfo.license == info.license)\
-                .first()
+        dup = db.query(models.VehicleInfo).filter(
+            models.VehicleInfo.license == info.license
+        ).first()
     else:
         dup = db.query(models.VehicleInfo).filter(
             models.VehicleInfo.license == "无",
@@ -64,10 +65,9 @@ def create_vehicle(
         ).first()
 
     if dup:
-        # 已登记过
         return JSONResponse(status_code=200, content={"message": "您输入的数据已经登记"})
 
-    # —— 2. 否则正常写库并返回 ——
+    # —— 写库并返回 ——
     try:
         new_obj = crud.create_vehicle_info(db, info)
         return new_obj
@@ -75,7 +75,7 @@ def create_vehicle(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# GET 路由：按条件查询车辆信息
+# — GET /vehicle/info — 查询车辆 ——
 @app.get(
     "/vehicle/info",
     response_model=schemas.VehicleInfoList,
@@ -90,9 +90,6 @@ def get_vehicle(
     other_feature: str = None,
     db: Session = Depends(get_db)
 ):
-    """
-    按条件查询 VehicleInfo 数据，返回包装在 VehicleInfoList schema 中的结果列表。
-    """
     res = crud.query_vehicle_info(
         db,
         original_location=original_location,
@@ -103,7 +100,52 @@ def get_vehicle(
         other_feature=other_feature,
     )
     if not res:
-        # 没有查到时返回友好提示
         return JSONResponse(status_code=200, content={"message": "数据不存在"})
-
     return schemas.VehicleInfoList(items=res)
+
+
+# — POST /admin/login — 超管登录 ——
+@app.post(
+    "/admin/login",
+    response_model=schemas.AdminLoginResponse
+)
+def admin_login(req: schemas.AdminLoginRequest):
+    if req.password != ADMIN_PASSWORD:
+        raise HTTPException(status_code=401, detail="密码错误")
+    menu = ["browse_data", "delete_data", "clear_data"]
+    return schemas.AdminLoginResponse(message="登录成功", menu=menu)
+
+
+# — GET /admin/vehicles — 浏览所有数据 ——
+@app.get(
+    "/admin/vehicles",
+    response_model=schemas.VehicleInfoList,
+    dependencies=[Depends(verify_admin_password)]
+)
+def admin_get_all(db: Session = Depends(get_db)):
+    all_items = crud.get_all_vehicles(db)
+    return schemas.VehicleInfoList(items=all_items)
+
+
+# — DELETE /admin/vehicle/{vehicle_id} — 删除指定记录 ——
+@app.delete(
+    "/admin/vehicle/{vehicle_id}",
+    response_model=schemas.Message,
+    dependencies=[Depends(verify_admin_password)]
+)
+def admin_delete_vehicle(vehicle_id: int, db: Session = Depends(get_db)):
+    ok = crud.delete_vehicle_by_id(db, vehicle_id)
+    if not ok:
+        return JSONResponse(status_code=200, content={"message": "数据不存在"})
+    return schemas.Message(message=f"已删除车辆ID: {vehicle_id}")
+
+
+# — DELETE /admin/vehicles — 清空所有数据 ——
+@app.delete(
+    "/admin/vehicles",
+    response_model=schemas.Message,
+    dependencies=[Depends(verify_admin_password)]
+)
+def admin_clear_vehicles(db: Session = Depends(get_db)):
+    count = crud.clear_all_vehicles(db)
+    return schemas.Message(message=f"已清空全部车辆数据，共删除 {count} 条记录")
