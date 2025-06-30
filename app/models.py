@@ -3,13 +3,14 @@ from sqlalchemy import Column, Integer, String
 from .database import Base
 
 class VehicleInfo(Base):
-    __tablename__ = "vehicle_info"   # 与你的表名保持一致
+    __tablename__ = "vehicle_info"
 
     id = Column(Integer, primary_key=True, index=True)
-    license = Column(String(64), unique=True, index=True)        # 原来的 bike_id → license
-    Brand = Column(String(32))                                   # 注意大小写要和 Excel 列名对应
+    # 去掉 unique=True，让多个 "无" 也能插入
+    license = Column(String(64), index=True)
+    Brand = Column(String(32))
     color = Column(String(32))
     original_location = Column(String(255))
-    current_location = Column(String(255))                       # 原来的 new_location → current_location
+    current_location = Column(String(255))
     attachment = Column(String(255))
     other_feature = Column(String(255))
