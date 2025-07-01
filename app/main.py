@@ -22,7 +22,8 @@ models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Vehicle Info Plugin")
 
-# —— 依赖：数据库会话 ——
+
+# —— 依赖：获取数据库会话 ——
 def get_db():
     db = SessionLocal()
     try:
@@ -30,19 +31,18 @@ def get_db():
     finally:
         db.close()
 
+
 # —— 依赖：插件 API Key 验证 ——
-def verify_api_key(
-    x_api_key: str = Header(..., alias="X-API-Key")
-):
+def verify_api_key(x_api_key: str = Header(..., alias="X-API-Key")):
     if x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Invalid API Key")
 
+
 # —— 依赖：超级管理员密码验证 ——
-def verify_admin_password(
-    x_admin_password: str = Header(..., alias="X-Admin-Password")
-):
+#     如果密码不对，直接返回 200 + 友好提示
+def verify_admin_password(x_admin_password: str = Header(..., alias="X-Admin-Password")):
     if x_admin_password != ADMIN_PASSWORD:
-        raise HTTPException(status_code=401, detail="Invalid admin password")
+        return JSONResponse(status_code=200, content={"message": "密码错误，拒绝访问"})
 
 
 # — POST /vehicle/info — 登记车辆 ——
@@ -117,7 +117,8 @@ def get_vehicle(
 )
 def admin_login(req: schemas.AdminLoginRequest):
     if req.password != ADMIN_PASSWORD:
-        raise HTTPException(status_code=401, detail="密码错误")
+        # 密码错误时也返回 200 + 友好提示
+        return JSONResponse(status_code=200, content={"message": "密码错误，拒绝访问"})
     menu = ["browse_data", "delete_data", "clear_data"]
     return schemas.AdminLoginResponse(message="登录成功", menu=menu)
 
