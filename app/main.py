@@ -5,13 +5,13 @@ from fastapi import FastAPI, Depends, HTTPException, Header
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from email.mime.text import MIMEText
-from email.header import Header          # ← 新增，用于对中文 Subject 做 UTF-8 编码
+from email.header import Header as EmailHeader
 from dotenv import load_dotenv
 
 from app import crud, models, schemas
 from app.database import SessionLocal, engine
 
-# —— 环境 & 数据库 初始化 ——
+# ——— 环境 & 数据库 初始化 ———
 load_dotenv()
 API_KEY = os.getenv("PLUGIN_API_KEY")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
@@ -23,10 +23,9 @@ SMTP_USER = os.getenv("SMTP_USER")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 MAIL_SENDER = os.getenv("MAIL_SENDER")
 
-# 自动创建表
 models.Base.metadata.create_all(bind=engine)
-
 app = FastAPI(title="Vehicle Info Plugin")
+
 
 # —— 依赖：数据库会话 ——
 def get_db():
@@ -36,16 +35,18 @@ def get_db():
     finally:
         db.close()
 
+
 # —— 依赖：插件 API Key 验证 ——
 def verify_api_key(x_api_key: str = Header(..., alias="X-API-Key")):
     if x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Invalid API Key")
 
+
 # —— 依赖：超级管理员密码验证 ——
 def verify_admin_password(x_admin_password: str = Header(..., alias="X-Admin-Password")):
     if x_admin_password != ADMIN_PASSWORD:
-        # 密码错误时返回 200 + 友好提示
         return JSONResponse(status_code=200, content={"message": "密码错误，拒绝访问"})
+
 
 # — POST /vehicle/info — 登记车辆 ——
 @app.post(
@@ -194,9 +195,8 @@ def parking_alert(license: str, db: Session = Depends(get_db)):
 
     subject = "违停通知"
     body = f"您的车辆（车牌 {license}）在校园内违停，请尽快来移车。"
-    # 正确指定正文 & 主题的编码
     msg = MIMEText(body, "plain", "utf-8")
-    msg["Subject"] = Header(subject, "utf-8")
+    msg["Subject"] = EmailHeader(subject, "utf-8")
     msg["From"] = MAIL_SENDER
     msg["To"] = bind.email
 
