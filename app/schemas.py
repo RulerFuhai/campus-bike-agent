@@ -1,5 +1,4 @@
-# app/schemas.py
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 
 class VehicleInfoBase(BaseModel):
@@ -24,7 +23,7 @@ class VehicleInfoOut(VehicleInfoBase):
 class VehicleInfoList(BaseModel):
     items: List[VehicleInfoOut]
 
-# ——— 管理员相关模型 ———
+# —— 管理员相关模型 ——
 class AdminLoginRequest(BaseModel):
     password: str
 
@@ -34,3 +33,15 @@ class AdminLoginResponse(BaseModel):
 
 class Message(BaseModel):
     message: str
+
+# —— 车牌-邮箱绑定 ——
+class LicenseBindingCreate(BaseModel):
+    license: str
+    email: EmailStr
+
+class LicenseBindingOut(BaseModel):
+    license: str
+    email: EmailStr
+
+    class Config:
+        from_attributes = True

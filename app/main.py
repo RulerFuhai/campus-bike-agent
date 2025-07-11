@@ -1,29 +1,29 @@
-# app/main.py
-
 import os
+import smtplib
 from typing import List
-
 from fastapi import FastAPI, Depends, HTTPException, Header
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from email.mime.text import MIMEText
 from dotenv import load_dotenv
 
-# —— 关键：用包路径导入 ——
 from app import crud, models, schemas
 from app.database import SessionLocal, engine
 
-# ——— 环境 & 数据库 初始化 ———
+# —— 环境 & DB 初始化 ——
 load_dotenv()
 API_KEY = os.getenv("PLUGIN_API_KEY")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+SMTP_HOST = os.getenv("SMTP_HOST")
+SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
+SMTP_USER = os.getenv("SMTP_USER")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+MAIL_SENDER = os.getenv("MAIL_SENDER")
 
-# 自动创建表
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Vehicle Info Plugin")
 
-
-# —— 依赖：获取数据库会话 ——
 def get_db():
     db = SessionLocal()
     try:
@@ -31,21 +31,15 @@ def get_db():
     finally:
         db.close()
 
-
-# —— 依赖：插件 API Key 验证 ——
 def verify_api_key(x_api_key: str = Header(..., alias="X-API-Key")):
     if x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Invalid API Key")
 
-
-# —— 依赖：超级管理员密码验证 ——
-#     如果密码不对，直接返回 200 + 友好提示
 def verify_admin_password(x_admin_password: str = Header(..., alias="X-Admin-Password")):
     if x_admin_password != ADMIN_PASSWORD:
         return JSONResponse(status_code=200, content={"message": "密码错误，拒绝访问"})
 
-
-# — POST /vehicle/info — 登记车辆 ——
+# — POST /vehicle/info — 登记 ——
 @app.post(
     "/vehicle/info",
     response_model=schemas.VehicleInfoOut,
@@ -55,7 +49,6 @@ def create_vehicle(
     info: schemas.VehicleInfoCreate,
     db: Session = Depends(get_db)
 ):
-    # —— 重复检测 ——
     if info.license != "无":
         dup = db.query(models.VehicleInfo).filter(
             models.VehicleInfo.license == info.license
@@ -80,8 +73,7 @@ def create_vehicle(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
-# — GET /vehicle/info — 查询车辆 ——
+# — GET /vehicle/info — 查询 ——
 @app.get(
     "/vehicle/info",
     response_model=schemas.VehicleInfoList,
@@ -97,33 +89,26 @@ def get_vehicle(
     db: Session = Depends(get_db)
 ):
     res = crud.query_vehicle_info(
-        db,
-        original_location=original_location,
-        color=color,
-        license=license,
-        Brand=Brand,
-        attachment=attachment,
-        other_feature=other_feature,
+        db, original_location=original_location, color=color,
+        license=license, Brand=Brand, attachment=attachment,
+        other_feature=other_feature
     )
     if not res:
         return JSONResponse(status_code=200, content={"message": "数据不存在"})
     return schemas.VehicleInfoList(items=res)
 
-
-# — POST /admin/login — 超管登录 ——
+# — POST /admin/login — 管理员登录 ——
 @app.post(
     "/admin/login",
     response_model=schemas.AdminLoginResponse
 )
 def admin_login(req: schemas.AdminLoginRequest):
     if req.password != ADMIN_PASSWORD:
-        # 密码错误时也返回 200 + 友好提示
         return JSONResponse(status_code=200, content={"message": "密码错误，拒绝访问"})
     menu = ["browse_data", "delete_data", "clear_data"]
     return schemas.AdminLoginResponse(message="登录成功", menu=menu)
 
-
-# — GET /admin/vehicles — 浏览所有数据 ——
+# — GET /admin/vehicles — 浏览所有 ——
 @app.get(
     "/admin/vehicles",
     response_model=schemas.VehicleInfoList,
@@ -133,8 +118,7 @@ def admin_get_all(db: Session = Depends(get_db)):
     all_items = crud.get_all_vehicles(db)
     return schemas.VehicleInfoList(items=all_items)
 
-
-# — DELETE /admin/vehicle/{vehicle_id} — 删除指定记录 ——
+# — DELETE /admin/vehicle/{vehicle_id} — 删除单条 ——
 @app.delete(
     "/admin/vehicle/{vehicle_id}",
     response_model=schemas.Message,
@@ -146,8 +130,7 @@ def admin_delete_vehicle(vehicle_id: int, db: Session = Depends(get_db)):
         return JSONResponse(status_code=200, content={"message": "数据不存在"})
     return schemas.Message(message=f"已删除车辆ID: {vehicle_id}")
 
-
-# — DELETE /admin/vehicles — 清空所有数据 ——
+# — DELETE /admin/vehicles — 清空所有 ——
 @app.delete(
     "/admin/vehicles",
     response_model=schemas.Message,
@@ -156,3 +139,48 @@ def admin_delete_vehicle(vehicle_id: int, db: Session = Depends(get_db)):
 def admin_clear_vehicles(db: Session = Depends(get_db)):
     count = crud.clear_all_vehicles(db)
     return schemas.Message(message=f"已清空全部车辆数据，共删除 {count} 条记录")
+
+# — POST /binding — 车主邮箱绑定 ——
+@app.post(
+    "/binding",
+    response_model=schemas.LicenseBindingOut,
+    dependencies=[Depends(verify_api_key)]
+)
+def bind_license(info: schemas.LicenseBindingCreate, db: Session = Depends(get_db)):
+    obj = crud.bind_license_email(db, info)
+    return obj
+
+# — GET /binding — 查询绑定 ——
+@app.get(
+    "/binding",
+    dependencies=[Depends(verify_api_key)]
+)
+def query_binding(license: str, db: Session = Depends(get_db)):
+    bind = crud.get_binding(db, license)
+    if not bind:
+        return JSONResponse(status_code=200, content={"message": "未绑定"})
+    return schemas.LicenseBindingOut.from_orm(bind)
+
+# — GET /alert — 违停通知 ——
+@app.get(
+    "/alert",
+    dependencies=[Depends(verify_api_key)]
+)
+def parking_alert(license: str, db: Session = Depends(get_db)):
+    bind = crud.get_binding(db, license)
+    if not bind:
+        return JSONResponse(status_code=200, content={"message": "未绑定，无法通知"})
+    subject = "违停通知"
+    body = f"您的车辆（车牌 {license}）在校园内违停，请尽快来移车。"
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = subject
+    msg["From"] = MAIL_SENDER
+    msg["To"] = bind.email
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            server.starttls()
+            server.login(SMTP_USER, SMTP_PASSWORD)
+            server.sendmail(MAIL_SENDER, [bind.email], msg.as_string())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"邮件发送失败：{e}")
+    return JSONResponse(status_code=200, content={"message": f"已通知 {bind.email}"})

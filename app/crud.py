@@ -1,8 +1,6 @@
-# app/crud.py
 from sqlalchemy.orm import Session
-# —— 关键：从包里导入 ——
-from app.models import VehicleInfo
-from app.schemas import VehicleInfoCreate
+from app.models import VehicleInfo, LicenseBinding
+from app.schemas import VehicleInfoCreate, LicenseBindingCreate
 
 def create_vehicle_info(db: Session, info: VehicleInfoCreate):
     db_obj = VehicleInfo(
@@ -57,3 +55,18 @@ def clear_all_vehicles(db: Session) -> int:
     count = db.query(VehicleInfo).delete()
     db.commit()
     return count
+
+# —— 绑定和查询邮箱 ——
+def bind_license_email(db: Session, info: LicenseBindingCreate):
+    obj = db.query(LicenseBinding).filter(LicenseBinding.license == info.license).first()
+    if obj:
+        obj.email = info.email
+    else:
+        obj = LicenseBinding(license=info.license, email=info.email)
+        db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    return obj
+
+def get_binding(db: Session, license: str):
+    return db.query(LicenseBinding).filter(LicenseBinding.license == license).first()
