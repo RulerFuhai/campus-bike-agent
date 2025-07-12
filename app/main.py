@@ -1,5 +1,6 @@
 import os
 import smtplib
+import traceback                            # ← 新增，用于打印完整异常堆栈
 from typing import List
 from fastapi import FastAPI, Depends, HTTPException, Header
 from fastapi.responses import JSONResponse
@@ -23,11 +24,13 @@ SMTP_USER = os.getenv("SMTP_USER")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 MAIL_SENDER = os.getenv("MAIL_SENDER")
 
+# 自动创建表
 models.Base.metadata.create_all(bind=engine)
+
 app = FastAPI(title="Vehicle Info Plugin")
 
 
-# —— 依赖：数据库会话 ——
+# —— 依赖：获取数据库会话 ——
 def get_db():
     db = SessionLocal()
     try:
@@ -201,11 +204,17 @@ def parking_alert(license: str, db: Session = Depends(get_db)):
     msg["To"] = bind.email
 
     try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as server:
+            server.ehlo()
             server.starttls()
+            server.ehlo()
             server.login(SMTP_USER, SMTP_PASSWORD)
             server.sendmail(MAIL_SENDER, [bind.email], msg.as_string())
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"邮件发送失败：{e}")
+    except Exception:
+        # 打印完整堆栈到容器日志
+        tb = traceback.format_exc()
+        print(tb, flush=True)
+        # 将堆栈信息返回给客户端（测试阶段使用）
+        raise HTTPException(status_code=500, detail=tb)
 
     return JSONResponse(status_code=200, content={"message": f"已通知 {bind.email}"})
