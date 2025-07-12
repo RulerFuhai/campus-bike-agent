@@ -213,18 +213,13 @@ def parking_alert(license: str, db: Session = Depends(get_db)):
     msg["To"] = bind.email
 
     try:
-        server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10)
-        print("SMTP: connect OK", flush=True)
-        server.ehlo()
-        print("SMTP: ehlo OK", flush=True)
-        server.starttls()
-        print("SMTP: starttls OK", flush=True)
-        server.ehlo()
-        print("SMTP: ehlo after starttls OK", flush=True)
+        # 使用 SSL 直连 465
+        server = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=30)
+        print("SMTP_SSL: connect OK", flush=True)
         server.login(SMTP_USER, SMTP_PASSWORD)
-        print("SMTP: login OK", flush=True)
+        print("SMTP_SSL: login OK", flush=True)
         server.sendmail(MAIL_SENDER, [bind.email], msg.as_string())
-        print("SMTP: sendmail OK", flush=True)
+        print("SMTP_SSL: sendmail OK", flush=True)
         server.quit()
     except Exception:
         tb = traceback.format_exc()
