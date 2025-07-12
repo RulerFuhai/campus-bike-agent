@@ -1,3 +1,12 @@
+import socket
+# —— Monkey-patch：让 Python 只返回 IPv4 地址 ——
+_orig_getaddrinfo = socket.getaddrinfo
+def _getaddrinfo_ipv4(host, port, family=0, type=0, proto=0, flags=0):
+    infos = _orig_getaddrinfo(host, port, family, type, proto, flags)
+    # 只保留 IPv4 (AF_INET) 条目
+    return [info for info in infos if info[0] == socket.AF_INET]
+socket.getaddrinfo = _getaddrinfo_ipv4
+
 import os
 import smtplib
 import traceback
