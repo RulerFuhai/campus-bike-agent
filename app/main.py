@@ -1,7 +1,6 @@
 import os
 import smtplib
 import traceback
-import socket                                # ← 新增
 from typing import List
 from fastapi import FastAPI, Depends, HTTPException, Header
 from fastapi.responses import JSONResponse
@@ -10,30 +9,8 @@ from email.mime.text import MIMEText
 from email.header import Header as EmailHeader
 from dotenv import load_dotenv
 
-# —— Monkey-patch 强制 IPv4 连接 ——
-# 参考 socket.create_connection 的实现，但只遍历 AF_INET 记录
-_orig_create_connection = socket.create_connection
-
-def _create_connection_ipv4(address, timeout=None, source_address=None):
-    host, port = address
-    infos = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
-    if not infos:
-        raise OSError(f"No IPv4 address found for {host}")
-    last_err = None
-    for af, socktype, proto, canonname, sa in infos:
-        try:
-            sock = socket.socket(af, socktype, proto)
-            sock.settimeout(timeout)
-            if source_address:
-                sock.bind(source_address)
-            sock.connect(sa)
-            return sock
-        except Exception as e:
-            last_err = e
-            continue
-    raise last_err or OSError(f"Could not connect to {address} via IPv4")
-
-socket.create_connection = _create_connection_ipv4
+from app import crud, models, schemas
+from app.database import SessionLocal, engine
 
 # ——— 环境 & 数据库 初始化 ———
 load_dotenv()
@@ -46,9 +23,6 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
 SMTP_USER = os.getenv("SMTP_USER")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 MAIL_SENDER = os.getenv("MAIL_SENDER")
-
-from app import crud, models, schemas
-from app.database import SessionLocal, engine
 
 # 自动创建表
 models.Base.metadata.create_all(bind=engine)
@@ -230,12 +204,19 @@ def parking_alert(license: str, db: Session = Depends(get_db)):
     msg["To"] = bind.email
 
     try:
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as server:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            server.login(SMTP_USER, SMTP_PASSWORD)
-            server.sendmail(MAIL_SENDER, [bind.email], msg.as_string())
+        server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10)
+        print("SMTP: connect OK", flush=True)
+        server.ehlo()
+        print("SMTP: ehlo OK", flush=True)
+        server.starttls()
+        print("SMTP: starttls OK", flush=True)
+        server.ehlo()
+        print("SMTP: ehlo after starttls OK", flush=True)
+        server.login(SMTP_USER, SMTP_PASSWORD)
+        print("SMTP: login OK", flush=True)
+        server.sendmail(MAIL_SENDER, [bind.email], msg.as_string())
+        print("SMTP: sendmail OK", flush=True)
+        server.quit()
     except Exception:
         tb = traceback.format_exc()
         print(tb, flush=True)
