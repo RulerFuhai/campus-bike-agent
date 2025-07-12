@@ -1,6 +1,7 @@
 import os
 import smtplib
-import traceback                            # ← 新增，用于打印完整异常堆栈
+import traceback
+import socket                                # ← 新增
 from typing import List
 from fastapi import FastAPI, Depends, HTTPException, Header
 from fastapi.responses import JSONResponse
@@ -9,8 +10,30 @@ from email.mime.text import MIMEText
 from email.header import Header as EmailHeader
 from dotenv import load_dotenv
 
-from app import crud, models, schemas
-from app.database import SessionLocal, engine
+# —— Monkey-patch 强制 IPv4 连接 ——
+# 参考 socket.create_connection 的实现，但只遍历 AF_INET 记录
+_orig_create_connection = socket.create_connection
+
+def _create_connection_ipv4(address, timeout=None, source_address=None):
+    host, port = address
+    infos = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+    if not infos:
+        raise OSError(f"No IPv4 address found for {host}")
+    last_err = None
+    for af, socktype, proto, canonname, sa in infos:
+        try:
+            sock = socket.socket(af, socktype, proto)
+            sock.settimeout(timeout)
+            if source_address:
+                sock.bind(source_address)
+            sock.connect(sa)
+            return sock
+        except Exception as e:
+            last_err = e
+            continue
+    raise last_err or OSError(f"Could not connect to {address} via IPv4")
+
+socket.create_connection = _create_connection_ipv4
 
 # ——— 环境 & 数据库 初始化 ———
 load_dotenv()
@@ -24,13 +47,16 @@ SMTP_USER = os.getenv("SMTP_USER")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 MAIL_SENDER = os.getenv("MAIL_SENDER")
 
+from app import crud, models, schemas
+from app.database import SessionLocal, engine
+
 # 自动创建表
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Vehicle Info Plugin")
 
 
-# —— 依赖：获取数据库会话 ——
+# —— 依赖：数据库会话 ——
 def get_db():
     db = SessionLocal()
     try:
@@ -211,10 +237,8 @@ def parking_alert(license: str, db: Session = Depends(get_db)):
             server.login(SMTP_USER, SMTP_PASSWORD)
             server.sendmail(MAIL_SENDER, [bind.email], msg.as_string())
     except Exception:
-        # 打印完整堆栈到容器日志
         tb = traceback.format_exc()
         print(tb, flush=True)
-        # 将堆栈信息返回给客户端（测试阶段使用）
         raise HTTPException(status_code=500, detail=tb)
 
     return JSONResponse(status_code=200, content={"message": f"已通知 {bind.email}"})
